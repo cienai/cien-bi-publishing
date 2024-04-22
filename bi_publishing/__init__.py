@@ -458,7 +458,7 @@ def get_capcities(client):
         raise Exception(response.content)
 
 
-def get_capacity(client, capacity_name):
+def get_capacity_by_name(client, capacity_name):
     capacities = get_capcities(client)
     for capacity in capacities:
         if capacity['displayName'] == capacity_name:
