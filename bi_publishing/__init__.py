@@ -122,14 +122,13 @@ def get_report_by_name(client, group_id, report_name, retries=0, interval=1):
     returns the report object for the given report name in the given group
     """
     for i in range(retries + 1):
-        try:
-            reports = get_reports_in_group(client, group_id)
-            for report in reports:
-                if report['name'] == report_name:
-                    return report
-        except:  # noqa
-            print(f"==== request failed sleeping {interval}s ====")
-            time.sleep(interval)
+        reports = get_reports_in_group(client, group_id)
+        for report in reports:
+            if report['name'] == report_name:
+                return report
+        print(f"==== report not found. sleeping {interval}s ====")
+        time.sleep(interval)
+
     raise ValueError(f"'{report_name}' not found in '{group_id}'")
 
 
@@ -446,3 +445,36 @@ def download_file_from_integration_hub(filename, local_file_name):
     url = "https://github.com/cienai/IntegrationHub/raw/main/powerbi/" + encoded_file
     r = requests.get(url, allow_redirects=True)
     open(local_file_name, 'wb').write(r.content)
+
+
+def get_capcities(client):
+    api_url = f"{POWERBI_BASE_URL}/capacities"
+    response = requests.get(api_url, headers=_get_headers(client))
+    if response.status_code == 200:
+        capacities = response.json()
+        return capacities['value']
+    else:
+        raise Exception(response.content)
+
+
+def get_capacity_by_name(client, capacity_name):
+    capacities = get_capcities(client)
+    for capacity in capacities:
+        if capacity['displayName'] == capacity_name:
+            return capacity
+    raise ValueError(f"capacity: {capacity_name} not found")
+
+
+def add_group_to_capacity(client, group_id, capacity_id):
+    """
+    Add the given group/workspace to the given capacity
+    """
+    api_url = f"{POWERBI_BASE_URL}/groups/{group_id}/AssignToCapacity"
+    print(f"--- adding group: {group_id} to dataset: {capacity_id} ---")
+    print(f"--- add url: {api_url} ---")
+    body = {'capacityId': capacity_id}
+    response = requests.post(api_url, headers=_get_headers(client), data=json.dumps(body))
+    if response.ok:
+        print("--- add successful ---")
+    else:
+        raise Exception(f"--- add failed: {response.content} ---")
