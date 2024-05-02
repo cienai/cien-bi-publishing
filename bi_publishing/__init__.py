@@ -122,14 +122,13 @@ def get_report_by_name(client, group_id, report_name, retries=0, interval=1):
     returns the report object for the given report name in the given group
     """
     for i in range(retries + 1):
-        try:
-            reports = get_reports_in_group(client, group_id)
-            for report in reports:
-                if report['name'] == report_name:
-                    return report
-        except:  # noqa
-            print(f"==== request failed sleeping {interval}s ====")
-            time.sleep(interval)
+        reports = get_reports_in_group(client, group_id)
+        for report in reports:
+            if report['name'] == report_name:
+                return report
+        print(f"==== report not found. sleeping {interval}s ====")
+        time.sleep(interval)
+
     raise ValueError(f"'{report_name}' not found in '{group_id}'")
 
 
