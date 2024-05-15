@@ -93,14 +93,12 @@ def get_dataset_by_name(client, group_id, dataset_name, retries=0, interval=1):
     returns the dataset object for the given dataset name in the given group
     """
     for i in range(retries + 1):
-        try:
-            datasets = get_datasets_in_group(client, group_id)
-            for ds in datasets:
-                if ds['name'] == dataset_name:
-                    return ds
-        except:  # noqa
-            print(f"==== request failed sleeping {interval}s ====")
-            time.sleep(interval)
+        datasets = get_datasets_in_group(client, group_id)
+        for ds in datasets:
+            if ds['name'] == dataset_name:
+                return ds
+        print(f"==== request failed sleeping {interval}s ====")
+        time.sleep(interval)
     raise ValueError(f"dataset '{dataset_name}' not found in group {group_id}")
 
 
