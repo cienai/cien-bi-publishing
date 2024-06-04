@@ -43,7 +43,7 @@ client = bi_publishing.get_client(pbi_conn)
 
 # define the data warehouse connection
 dw_conn = {
-    "type": "postgres", # or mssql
+    "type": "PostgresSQL", # or "SQL Server"
     "host": "<db host>",
     "username": "<db username>"
     "password": "<db password>",  
