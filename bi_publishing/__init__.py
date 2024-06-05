@@ -323,13 +323,13 @@ def update_dataset_params(client, db_name, dw_conn, group_id, dataset_id):
     if dw_conn['type'] == 'postgres':
         db_type = "PostgresSQL"
     elif dw_conn['type'] == 'mssql':
-        db_type = "Sql"
+        db_type = "Sql Server"
 
     if db_type == "INVALID":
         raise ValueError("Invalid database type")
 
     postgres_host = dw_conn['host'] if db_type == "PostgresSQL" else "INVALID_HOST"  # doesn't work if ''
-    sql_server_host = dw_conn['host'] if db_type == "Sql" else "INVALID_HOST"  # doesn't work if ''
+    sql_server_host = dw_conn['host'] if db_type == "SQL Server" else "INVALID_HOST"  # doesn't work if ''
     details = {
         "updateDetails": [
             {"name": 'db_name', "newValue": db_name},
@@ -359,7 +359,7 @@ def update_dataset_credentials(client, dw_conn, group_id, dataset_id):
     password = dw_conn['password']
 
     for datasource in datasources:
-        if datasource['datasourceType'] in ['PostgreSql', 'Sql']:
+        if datasource['datasourceType'] in ['PostgreSql', 'SQL Server']:
             credentials_update = {
                 "credentialDetails": {
                     "credentialType": 'Basic',
