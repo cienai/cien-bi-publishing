@@ -359,7 +359,7 @@ def update_dataset_credentials(client, dw_conn, group_id, dataset_id):
     password = dw_conn['password']
 
     for datasource in datasources:
-        if datasource['datasourceType'] in ['PostgreSql', 'SQL Server']:
+        if datasource['datasourceType'] in ['PostgresSQL', 'SQL Server']:
             credentials_update = {
                 "credentialDetails": {
                     "credentialType": 'Basic',
