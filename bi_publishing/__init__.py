@@ -75,17 +75,20 @@ def get_group_by_name(client, group_name):
     raise Exception(f"Group={group_name} not found")
 
 
-def get_datasets_in_group(client, group_id):
+def get_datasets_in_group(client, group_id, retries=0, interval=1):
     """
     returns a list of datasets in the given group
     """
     api_url = f"{POWERBI_BASE_URL}/groups/{group_id}/datasets"
-    response = requests.get(api_url, headers=_get_headers(client))
-    if response.status_code == 200:
-        datasets = response.json()
-        return datasets['value']
-    else:
-        raise Exception(response.content)
+    for i in range(retries + 1):
+        response = requests.get(api_url, headers=_get_headers(client))
+        if response.status_code == 200:
+            datasets = response.json()
+            return datasets['value']
+        print(f"==== request failed sleeping {interval}s ====")
+        time.sleep(interval)
+
+    raise ValueError(response.content)
 
 
 def get_dataset_by_name(client, group_id, dataset_name, retries=0, interval=1):
@@ -102,17 +105,20 @@ def get_dataset_by_name(client, group_id, dataset_name, retries=0, interval=1):
     raise ValueError(f"dataset '{dataset_name}' not found in group {group_id}")
 
 
-def get_reports_in_group(client, group_id):
+def get_reports_in_group(client, group_id, retries=0, interval=1):
     """
     returns a list of reports in the given group
     """
     api_url = f"{POWERBI_BASE_URL}/groups/{group_id}/reports"
-    response = requests.get(api_url, headers=_get_headers(client))
-    if response.status_code == 200:
-        reports = response.json()
-        return reports['value']
-    else:
-        raise Exception(response.content)
+    for i in range(retries + 1):
+        response = requests.get(api_url, headers=_get_headers(client))
+        if response.status_code == 200:
+            reports = response.json()
+            return reports['value']
+        print(f"==== request failed sleeping {interval}s ====")
+        time.sleep(interval)
+
+    raise ValueError(response.content)
 
 
 def get_report_by_name(client, group_id, report_name, retries=0, interval=1):
@@ -120,7 +126,8 @@ def get_report_by_name(client, group_id, report_name, retries=0, interval=1):
     returns the report object for the given report name in the given group
     """
     for i in range(retries + 1):
-        reports = get_reports_in_group(client, group_id)
+        # if the report is uploaded immediately before this step, it doesn't show up immediately. you'd have to wait and retry until it shows up.
+        reports = get_reports_in_group(client, group_id, retries=5, interval=10)
         for report in reports:
             if report['name'] == report_name:
                 return report
@@ -308,7 +315,7 @@ def clone_report_in_group(client, source_group_id, target_group_id, report_name,
     raise Exception("Clone report failed: ", export_response.content)
 
 
-def update_dataset_params(coid, client, dw_conn, group_id, dataset_id):
+def update_dataset_params(client, db_name, dw_conn, group_id, dataset_id):
     """
     update the dataset parameters in the given group
     """
@@ -316,16 +323,16 @@ def update_dataset_params(coid, client, dw_conn, group_id, dataset_id):
     if dw_conn['type'] == 'postgres':
         db_type = "PostgresSQL"
     elif dw_conn['type'] == 'mssql':
-        db_type = "Sql"
+        db_type = "SQL Server"
 
     if db_type == "INVALID":
         raise ValueError("Invalid database type")
 
     postgres_host = dw_conn['host'] if db_type == "PostgresSQL" else "INVALID_HOST"  # doesn't work if ''
-    sql_server_host = dw_conn['host'] if db_type == "Sql" else "INVALID_HOST"  # doesn't work if ''
+    sql_server_host = dw_conn['host'] if db_type == "SQL Server" else "INVALID_HOST"  # doesn't work if ''
     details = {
         "updateDetails": [
-            {"name": 'db_name', "newValue": f"cien_{coid.lower()}_db"},
+            {"name": 'db_name', "newValue": db_name},
             {"name": 'db_server_postgres', "newValue": postgres_host},
             {"name": 'db_server_sql', "newValue": sql_server_host},
             {"name": 'db_type', "newValue": db_type}
