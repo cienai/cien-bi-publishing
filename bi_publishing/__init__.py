@@ -75,17 +75,20 @@ def get_group_by_name(client, group_name):
     raise Exception(f"Group={group_name} not found")
 
 
-def get_datasets_in_group(client, group_id):
+def get_datasets_in_group(client, group_id, retries=0, interval=1):
     """
     returns a list of datasets in the given group
     """
     api_url = f"{POWERBI_BASE_URL}/groups/{group_id}/datasets"
-    response = requests.get(api_url, headers=_get_headers(client))
-    if response.status_code == 200:
-        datasets = response.json()
-        return datasets['value']
-    else:
-        raise Exception(response.content)
+    for i in range(retries + 1):
+        response = requests.get(api_url, headers=_get_headers(client))
+        if response.status_code == 200:
+            datasets = response.json()
+            return datasets['value']
+        print(f"==== request failed sleeping {interval}s ====")
+        time.sleep(interval)
+
+    raise ValueError(response.content)
 
 
 def get_dataset_by_name(client, group_id, dataset_name, retries=0, interval=1):
@@ -102,17 +105,20 @@ def get_dataset_by_name(client, group_id, dataset_name, retries=0, interval=1):
     raise ValueError(f"dataset '{dataset_name}' not found in group {group_id}")
 
 
-def get_reports_in_group(client, group_id):
+def get_reports_in_group(client, group_id, retries=0, interval=1):
     """
     returns a list of reports in the given group
     """
     api_url = f"{POWERBI_BASE_URL}/groups/{group_id}/reports"
-    response = requests.get(api_url, headers=_get_headers(client))
-    if response.status_code == 200:
-        reports = response.json()
-        return reports['value']
-    else:
-        raise Exception(response.content)
+    for i in range(retries + 1):
+        response = requests.get(api_url, headers=_get_headers(client))
+        if response.status_code == 200:
+            reports = response.json()
+            return reports['value']
+        print(f"==== request failed sleeping {interval}s ====")
+        time.sleep(interval)
+
+    raise ValueError(response.content)
 
 
 def get_report_by_name(client, group_id, report_name, retries=0, interval=1):
@@ -120,7 +126,8 @@ def get_report_by_name(client, group_id, report_name, retries=0, interval=1):
     returns the report object for the given report name in the given group
     """
     for i in range(retries + 1):
-        reports = get_reports_in_group(client, group_id)
+        # if the report is uploaded immediately before this step, it doesn't show up immediately. you'd have to wait and retry until it shows up.
+        reports = get_reports_in_group(client, group_id, retries=5, interval=10)
         for report in reports:
             if report['name'] == report_name:
                 return report
