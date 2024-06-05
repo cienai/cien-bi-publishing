@@ -323,7 +323,7 @@ def update_dataset_params(client, db_name, dw_conn, group_id, dataset_id):
     if dw_conn['type'] == 'postgres':
         db_type = "PostgresSQL"
     elif dw_conn['type'] == 'mssql':
-        db_type = "Sql Server"
+        db_type = "SQL Server"
 
     if db_type == "INVALID":
         raise ValueError("Invalid database type")
