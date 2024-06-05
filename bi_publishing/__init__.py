@@ -308,7 +308,7 @@ def clone_report_in_group(client, source_group_id, target_group_id, report_name,
     raise Exception("Clone report failed: ", export_response.content)
 
 
-def update_dataset_params(coid, client, dw_conn, group_id, dataset_id):
+def update_dataset_params(client, db_name, dw_conn, group_id, dataset_id):
     """
     update the dataset parameters in the given group
     """
@@ -325,7 +325,7 @@ def update_dataset_params(coid, client, dw_conn, group_id, dataset_id):
     sql_server_host = dw_conn['host'] if db_type == "Sql" else "INVALID_HOST"  # doesn't work if ''
     details = {
         "updateDetails": [
-            {"name": 'db_name', "newValue": f"cien_{coid.lower()}_db"},
+            {"name": 'db_name', "newValue": db_name},
             {"name": 'db_server_postgres', "newValue": postgres_host},
             {"name": 'db_server_sql', "newValue": sql_server_host},
             {"name": 'db_type', "newValue": db_type}
