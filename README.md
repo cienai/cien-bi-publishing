@@ -106,11 +106,13 @@ for email_id in member_users:
 prefix = ""
 print("--- cleaning up target workspace ---")
 bi_publishing.remove_everything_in_group(client, target_group['id'], prefix)
-
+tag = 'v4.1.14'
 for dset, reports in DATASET_REPORT_MAPPING.items():
     print(f"=============== processing dataset: {dset} ===============")
     # ==== 0. download the dataset
-    bi_publishing.download_file_from_integration_hub(dset, dset)
+    bi_publishing.download_file_from_integration_hub(tag, dset, dset)
+    # ensure that the dataset is disconnected
+    bi_publishing.disconnect_pbix(dset)
 
     # ==== 1. upload dataset
     remote_daset_name = f"{prefix} {dset}".replace('.pbix', '')
@@ -124,7 +126,7 @@ for dset, reports in DATASET_REPORT_MAPPING.items():
     # ==== 2. Upload the reports
     # because we can directly import the dataset and reports, we don't need to clone the reports separately
     for report in reports:
-        bi_publishing.download_file_from_integration_hub(report, report)
+        bi_publishing.download_file_from_integration_hub(tag, report, report)
 
         # to make the reports deploy across tenants
         bi_publishing.disconnect_pbix(report)
