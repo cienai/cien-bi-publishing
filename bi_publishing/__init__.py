@@ -445,11 +445,13 @@ def _get_config(pbi_workspace_conn, scope_overrides=None):
     return config
 
 
-def download_file_from_integration_hub(filename, local_file_name):
+def download_file_from_integration_hub(tag, filename, local_file_name):
     print(f"--- downloading: {filename}")
 
     encoded_file = urllib.parse.quote(filename)
-    url = "https://github.com/cienai/IntegrationHub/raw/main/powerbi/" + encoded_file
+    url = f"https://github.com/cienai/IntegrationHub/raw/{tag}/powerbi/"
+    url = url + encoded_file
+    print("--- Downloading from: ", url)
     r = requests.get(url, allow_redirects=True)
     open(local_file_name, 'wb').write(r.content)
 
