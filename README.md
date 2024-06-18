@@ -111,6 +111,8 @@ for dset, reports in DATASET_REPORT_MAPPING.items():
     print(f"=============== processing dataset: {dset} ===============")
     # ==== 0. download the dataset
     bi_publishing.download_file_from_integration_hub(dset, dset)
+    # ensure that the dataset is disconnected
+    bi_publishing.disconnect_pbix(dset)
 
     # ==== 1. upload dataset
     remote_daset_name = f"{prefix} {dset}".replace('.pbix', '')
