@@ -125,6 +125,11 @@ for dset, reports in DATASET_REPORT_MAPPING.items():
     # because we can directly import the dataset and reports, we don't need to clone the reports separately
     for report in reports:
         bi_publishing.download_file_from_integration_hub(report, report)
+
+        # to make the reports deploy across tenants
+        bi_publishing.disconnect_pbix(report)
+        bi_publishing.connect_pbix(report, target_group['id'], dataset['id'])
+
         report_name = f"{prefix} {report}".replace('.pbix', '')
         print(f"--- uploading report: {report_name}")
         bi_publishing.upload_report_group(client, target_group, report_name, report)

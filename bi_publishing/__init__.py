@@ -3,6 +3,8 @@ import requests
 import json
 import msal
 import urllib.parse
+import zipfile
+import os
 
 POWERBI_BASE_URL = "https://api.powerbi.com/v1.0/myorg"
 
@@ -443,11 +445,13 @@ def _get_config(pbi_workspace_conn, scope_overrides=None):
     return config
 
 
-def download_file_from_integration_hub(filename, local_file_name):
+def download_file_from_integration_hub(tag, filename, local_file_name):
     print(f"--- downloading: {filename}")
 
     encoded_file = urllib.parse.quote(filename)
-    url = "https://github.com/cienai/IntegrationHub/raw/main/powerbi/" + encoded_file
+    url = f"https://github.com/cienai/IntegrationHub/raw/{tag}/powerbi/"
+    url = url + encoded_file
+    print("--- Downloading from: ", url)
     r = requests.get(url, allow_redirects=True)
     open(local_file_name, 'wb').write(r.content)
 
@@ -483,3 +487,62 @@ def add_group_to_capacity(client, group_id, capacity_id):
         print("--- add successful ---")
     else:
         raise Exception(f"--- add failed: {response.content} ---")
+
+
+def disconnect_pbix(pbix_path):
+    """
+    Remove the Connections file from the given PBIX file
+    """
+    # files_to_remove = ['SecurityBindings', 'Connections']
+    files_to_remove = ['Connections']
+    # files_to_remove = ['SecurityBindings']
+    # Create a temporary zip file
+    temp_zip_path = pbix_path + '.temp'
+
+    with zipfile.ZipFile(pbix_path, 'r') as zip_read:
+        with zipfile.ZipFile(temp_zip_path, 'w') as zip_write:
+            # Iterate over items in the original zip file
+            for item in zip_read.infolist():
+                if item.filename not in files_to_remove:
+                    # Copy file to the new zip archive if it's not in the removal list
+                    zip_write.writestr(item, zip_read.read(item.filename))
+
+    # Replace the original zip file with the new one
+    os.remove(pbix_path)
+    os.rename(temp_zip_path, pbix_path)
+
+
+def connect_pbix(pbix_path, group_id, dataset_id):
+    """
+    Connect the given PBIX file to the given group and dataset
+    Warning: this uses undocumented code and may break in the future
+    """
+    connection_string = f"Data Source=pbiazure://api.powerbi.com;Initial Catalog={group_id};Identity Provider=\"https://login.microsoftonline.com/common, https://analysis.windows.net/powerbi/api, 7f67af8a-fedc-4b08-8b4e-37c4d127b6cf\";Integrated Security=ClaimsToken"
+    content = {
+        "Version": 3,
+        "Connections": [
+            {
+                "Name": "EntityDataSource",
+                "ConnectionString": connection_string,
+                "ConnectionType": "pbiServiceLive",
+                "PbiServiceModelId": 617430,
+                "PbiModelVirtualServerName": "sobe_wowvirtualserver",
+                "PbiModelDatabaseName": dataset_id
+            }
+        ]
+    }
+    content = json.dumps(content)
+    temp_zip_path = pbix_path + '.temp'
+
+    # Create a temporary ZIP file
+    with zipfile.ZipFile(temp_zip_path, 'w') as zip_write:
+        # Read from the original ZIP file
+        with zipfile.ZipFile(pbix_path, 'r') as zip_read:
+            # Copy existing files to the temporary ZIP file
+            for item in zip_read.infolist():
+                zip_write.writestr(item, zip_read.read(item.filename))
+            # Write the new Connections file
+            zip_write.writestr('Connections', content)
+
+    # Replace the original ZIP file with the new one
+    os.replace(temp_zip_path, pbix_path)
