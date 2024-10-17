@@ -326,6 +326,8 @@ def update_dataset_params(client, db_name, dw_conn, group_id, dataset_id):
         db_type = "PostgresSQL"
     elif dw_conn['type'] == 'mssql':
         db_type = "SQL Server"
+    elif dw_conn['type'] == 'azure-datalake':
+        db_type = "Azure Data Lake"
 
     if db_type == "INVALID":
         raise ValueError("Invalid database type")
@@ -340,6 +342,13 @@ def update_dataset_params(client, db_name, dw_conn, group_id, dataset_id):
             {"name": 'db_type', "newValue": db_type}
         ]
     }
+
+    if db_type == "Azure Data Lake":
+        file_server_data_lake, file_folder_data_lake = "wasbs://cienjobdataus.blob.core.windows.net/aceme24".replace('blob', 'dfs').replace('wasbs://', '').split('/')
+        file_server_data_lake = f'htpps://{file_server_data_lake}/'
+        file_folder_data_lake += '/export/'
+        details['updateDetails'].append({"name": 'file_server_data_lake', "newValue": file_server_data_lake})
+        details['updateDetails'].append({"name": 'file_folder_data_lake', "newValue": file_folder_data_lake})
 
     update_params_url = f"{POWERBI_BASE_URL}/groups/{group_id}/datasets/{dataset_id}/Default.UpdateParameters"
     res = requests.post(update_params_url, headers=_get_headers(client), data=json.dumps(details))
@@ -357,11 +366,12 @@ def update_dataset_credentials(client, dw_conn, group_id, dataset_id):
     print('--- getting datasources for: ', url)
     res = requests.get(url, headers=_get_headers(client))
     datasources = res.json()['value']
-    username = dw_conn['username']
-    password = dw_conn['password']
 
     for datasource in datasources:
         if datasource['datasourceType'] in ['PostgreSql', 'Sql']:
+            username = dw_conn['username']
+            password = dw_conn['password']
+
             credentials_update = {
                 "credentialDetails": {
                     "credentialType": 'Basic',
@@ -372,14 +382,27 @@ def update_dataset_credentials(client, dw_conn, group_id, dataset_id):
                     "useEndUserOAuth2Credentials": "False"
                 }
             }
-            url = f"{POWERBI_BASE_URL}/gateways/{datasource['gatewayId']}/datasources/{datasource['datasourceId']}"
-            res = requests.patch(url, headers=_get_headers(client), data=json.dumps(credentials_update))
-            if res.ok:
-                print("--- credentials updated successfully ---")
-            else:
-                raise Exception("Failed to update credentials: ", res.content)
+        elif datasource['datasourceType'] == 'AzureDataLakeStorage':
+            sas_token = dw_conn['AZURE_STORAGE_SAS_TOKEN']
+            credentials_update = {
+                "credentialDetails": {
+                    "credentialType": 'SAS',
+                    "credentials": json.dumps({"credentialData": [{"name": "token", "value": sas_token}]}),
+                    "encryptedConnection": 'Encrypted',
+                    "encryptionAlgorithm": "None",
+                    "privacyLevel": "Organizational",
+                    "useEndUserOAuth2Credentials": "False"
+                }
+            }
         else:
-            print("======= UNKOWN DATASOURCE FOUND =========", datasource)
+            raise Exception("======= UNKOWN DATASOURCE FOUND =========", datasource)
+
+        url = f"{POWERBI_BASE_URL}/gateways/{datasource['gatewayId']}/datasources/{datasource['datasourceId']}"
+        res = requests.patch(url, headers=_get_headers(client), data=json.dumps(credentials_update))
+        if res.ok:
+            print("--- credentials updated successfully ---")
+        else:
+            raise Exception("Failed to update credentials: ", res.content)
 
 
 def get_users_in_group(client, group_id):
