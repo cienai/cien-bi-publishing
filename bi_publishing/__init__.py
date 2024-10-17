@@ -345,7 +345,7 @@ def update_dataset_params(client, db_name, dw_conn, group_id, dataset_id):
 
     if db_type == "Azure Data Lake":
         file_server_data_lake, file_folder_data_lake = dw_conn['BUCKET_URI'].replace('blob', 'dfs').replace('wasbs://', '').split('/')
-        file_server_data_lake = f'htpps://{file_server_data_lake}/'
+        file_server_data_lake = f'https://{file_server_data_lake}/'
         file_folder_data_lake += '/export/'
         details['updateDetails'].append({"name": 'file_server_data_lake', "newValue": file_server_data_lake})
         details['updateDetails'].append({"name": 'file_folder_data_lake', "newValue": file_folder_data_lake})
