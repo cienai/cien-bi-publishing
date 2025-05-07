@@ -441,8 +441,6 @@ def get_client(pbi_workspace_conn, scope_overrides=None):
     returns a client object that can be used to interact with the PowerBI service
     """
     config = _get_config(pbi_workspace_conn, scope_overrides)
-    print(f'config: {config}')
-    print(f'scopes: {config["scope"]}')
     token = get_auth_token(config)
     client = {
         'auth_token': token,
