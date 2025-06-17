@@ -436,6 +436,22 @@ def add_user_to_group(client, group_id, email_id, user_type):
         raise Exception(f"--- failed to add user {email_id} {response.content} ---")
 
 
+def add_usergroup_to_group(client, usergroup_id, usergroup_type, target_group_id):
+    payload = {
+        "identifier": usergroup_id, # "this has to be the id not the email of the group"
+        "groupUserAccessRight": usergroup_type,  # or Viewer, Contributor, Admin
+        "principalType": "Group"
+    }
+
+    headers = _get_headers(client)
+    API_URL = f'https://api.powerbi.com/v1.0/myorg/groups/{target_group_id}/users'
+    response = requests.post(API_URL, headers=headers, json=payload)
+    if response.ok:
+        print(f'--- {usergroup_id} added to group {target_group_id} as {usergroup_type}')
+    else:
+        raise Exception(f"--- failed to add user {usergroup_id} {response.content} ---")
+
+
 def get_client(pbi_workspace_conn, scope_overrides=None):
     """
     returns a client object that can be used to interact with the PowerBI service
