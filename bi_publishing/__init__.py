@@ -161,7 +161,7 @@ def get_page_urls_for_report(client, group_id, report_id):
     for page in pages:
         page_id = page['name']
         display_name = page['displayName']
-        url = f"https://app.powerbi.com/groups/{group['id']}/reports/{report_id}/{page_id}?experience=power-bi"
+        url = f"https://app.powerbi.com/groups/{group_id}/reports/{report_id}/{page_id}?experience=power-bi"
 
         # You can replace this with a lookup or metadata if you have descriptions stored elsewhere
         description = "No description available"  # Placeholder
