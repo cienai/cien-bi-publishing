@@ -152,6 +152,29 @@ def get_dashboards_in_group(client, group_id):
         raise Exception(response.content)
 
 
+def get_page_urls_for_report(client, group_id, report_id):
+    pages_url = f"https://api.powerbi.com/v1.0/myorg/groups/{group_id}/reports/{report_id}/pages"
+    response = requests.get(pages_url, headers=_get_headers(client))
+    pages = response.json().get('value', [])
+
+    output = []
+    for page in pages:
+        page_id = page['name']
+        display_name = page['displayName']
+        url = f"https://app.powerbi.com/groups/{group_id}/reports/{report_id}/{page_id}?experience=power-bi"
+
+        # You can replace this with a lookup or metadata if you have descriptions stored elsewhere
+        description = "No description available"  # Placeholder
+    
+        output.append({
+            "page_name": display_name,
+            "page_id": page_id,
+            "page_url": url,
+            # "description": description
+        })
+    return output
+
+
 def upload_report_group(client, group, remote_report_name, local_pbix_file_path):
     """
     upload the given local pbix report file into the workspace(group)
