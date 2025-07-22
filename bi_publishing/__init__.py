@@ -107,6 +107,16 @@ def get_dataset_by_name(client, group_id, dataset_name, retries=0, interval=1):
     raise ValueError(f"dataset '{dataset_name}' not found in group {group_id}")
 
 
+def takeover_dataset_in_group(client, group_id, dataset_id):
+    api_url = F"{POWERBI_BASE_URL}/groups/{group_id}/datasets/{dataset_id}/Default.TakeOver"
+    body = {}
+    response = requests.post(api_url, headers=_get_headers(client), data=json.dumps(body))
+    if response.ok:
+        print("--- dataset taken over ---")
+    else:
+        raise Exception(f"--- dataset takeover failed: {response.content} ---")
+
+
 def get_reports_in_group(client, group_id, retries=0, interval=1):
     """
     returns a list of reports in the given group
