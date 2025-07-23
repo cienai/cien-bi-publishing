@@ -201,6 +201,7 @@ def upload_report_group(client, group, remote_report_name, local_pbix_file_path)
     response = requests.post(import_url, headers=headers, files=files)
     if response.ok:
         print("--- upload report complete ---")
+        return response.json()
     else:
         raise Exception(f"Upload failed: {response.content}")
 
