@@ -240,6 +240,22 @@ def rebind_report_to_dataset_in_group(client, report_id, group_id, dataset_id):
         raise Exception(f"--- rebind failed: {response.content} ---")
 
 
+def update_report_content_in_group(client, group_id, src_report_id, target_report_id):
+    api_url = f"https://api.powerbi.com/v1.0/myorg/groups/{group_id}/reports/{target_report_id}/UpdateReportContent"
+    body = {
+        "sourceReport": {
+            "sourceReportId": src_report_id,
+            "sourceWorkspaceId": group_id
+          },
+          "sourceType": "ExistingReport"
+    }
+    response = requests.post(api_url, headers=_get_headers(client), data=json.dumps(body))
+    if response.ok:
+        print("--- report content updated ---")
+    else:
+        raise Exception(f"--- report content update failed: {response.content} ---")
+
+
 def refresh_dataset_in_group(client, group_id, datasetId):
     """
     refresh the dataset in the given group
