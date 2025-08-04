@@ -107,6 +107,16 @@ def get_dataset_by_name(client, group_id, dataset_name, retries=0, interval=1):
     raise ValueError(f"dataset '{dataset_name}' not found in group {group_id}")
 
 
+def takeover_dataset_in_group(client, group_id, dataset_id):
+    api_url = F"{POWERBI_BASE_URL}/groups/{group_id}/datasets/{dataset_id}/Default.TakeOver"
+    body = {}
+    response = requests.post(api_url, headers=_get_headers(client), data=json.dumps(body))
+    if response.ok:
+        print("--- dataset taken over ---")
+    else:
+        raise Exception(f"--- dataset takeover failed: {response.content} ---")
+
+
 def get_reports_in_group(client, group_id, retries=0, interval=1):
     """
     returns a list of reports in the given group
@@ -191,6 +201,7 @@ def upload_report_group(client, group, remote_report_name, local_pbix_file_path)
     response = requests.post(import_url, headers=headers, files=files)
     if response.ok:
         print("--- upload report complete ---")
+        return response.json()
     else:
         raise Exception(f"Upload failed: {response.content}")
 
@@ -228,6 +239,22 @@ def rebind_report_to_dataset_in_group(client, report_id, group_id, dataset_id):
         print("--- rebind successful ---")
     else:
         raise Exception(f"--- rebind failed: {response.content} ---")
+
+
+def update_report_content_in_group(client, group_id, src_report_id, target_report_id):
+    api_url = f"https://api.powerbi.com/v1.0/myorg/groups/{group_id}/reports/{target_report_id}/UpdateReportContent"
+    body = {
+        "sourceReport": {
+            "sourceReportId": src_report_id,
+            "sourceWorkspaceId": group_id
+          },
+          "sourceType": "ExistingReport"
+    }
+    response = requests.post(api_url, headers=_get_headers(client), data=json.dumps(body))
+    if response.ok:
+        print("--- report content updated ---")
+    else:
+        raise Exception(f"--- report content update failed: {response.content} ---")
 
 
 def refresh_dataset_in_group(client, group_id, datasetId):
@@ -367,9 +394,10 @@ def update_dataset_params(client, db_name, dw_conn, group_id, dataset_id):
     }
 
     if db_type == "Azure Data Lake":
-        file_server_data_lake, file_folder_data_lake = dw_conn['BUCKET_URI'].replace('blob', 'dfs').replace('wasbs://', '').split('/')
-        file_server_data_lake = f'https://{file_server_data_lake}/'
-        file_folder_data_lake += '/export/'
+        file_path = dw_conn['BUCKET_URI'].replace('blob', 'dfs').replace('wasbs://', '')
+        file_server_data_lake = 'https://' + file_path.split('/')[0] + '/'
+        file_folder_data_lake = '/'.join(file_path.split('/')[1:]) + '/export/'
+
         details['updateDetails'].append({"name": 'file_server_data_lake', "newValue": file_server_data_lake})
         details['updateDetails'].append({"name": 'file_folder_data_lake', "newValue": file_folder_data_lake})
 
