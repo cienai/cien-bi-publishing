@@ -77,6 +77,15 @@ def get_group_by_name(client, group_name):
     raise Exception(f"Group={group_name} not found")
 
 
+def set_group_to_large_semantic_model(client, group_id):
+    url = f"{POWERBI_BASE_URL}/groups/{group_id}"
+    res = requests.patch(url, headers=_get_headers(client), data=json.dumps({"defaultDatasetStorageFormat": "Large"}))
+    if res.ok:
+        print("--- workspace set to use large semantic models successfully ---")
+    else:
+        raise Exception("Failed to update workspace to large models: ", res.content)
+
+
 def get_datasets_in_group(client, group_id, retries=0, interval=1):
     """
     returns a list of datasets in the given group
