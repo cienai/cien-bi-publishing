@@ -576,7 +576,7 @@ def add_group_to_capacity(client, group_id, capacity_id):
     Add the given group/workspace to the given capacity
     """
     api_url = f"{POWERBI_BASE_URL}/groups/{group_id}/AssignToCapacity"
-    print(f"--- adding group: {group_id} to dataset: {capacity_id} ---")
+    print(f"--- adding group: {group_id} to capacity: {capacity_id} ---")
     print(f"--- add url: {api_url} ---")
     body = {'capacityId': capacity_id}
     response = requests.post(api_url, headers=_get_headers(client), data=json.dumps(body))
