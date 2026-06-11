@@ -609,6 +609,21 @@ def disconnect_pbix(pbix_path):
     os.rename(temp_zip_path, pbix_path)
 
 
+
+def delete_group(client, group_id):
+    """
+    delete the group/workspace with the given group_id
+    """
+    delete_url = f"{POWERBI_BASE_URL}/groups/{group_id}"
+    headers = _get_headers(client)
+    del headers['Content-Type']
+    response = requests.delete(delete_url, headers=headers)
+    if response.ok:
+        print("--- delete group successful ---")
+    else:
+        raise Exception(f"--- delete group failed: {response.content} ---")
+
+
 def connect_pbix(pbix_path, group_id, dataset_id):
     """
     Connect the given PBIX file to the given group and dataset
