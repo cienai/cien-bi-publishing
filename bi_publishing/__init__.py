@@ -542,15 +542,40 @@ def _get_config(pbi_workspace_conn, scope_overrides=None):
     return config
 
 
-def download_file_from_integration_hub(tag, filename, local_file_name):
-    print(f"--- downloading: {filename}")
+def download_file_from_integration_hub(tag, filename, local_file_name, *, github_token):
+    """Download a Power BI asset from the private IntegrationHub repository."""
+    if not github_token or not github_token.strip():
+        raise ValueError("github_token is required to download IntegrationHub assets")
 
-    encoded_file = urllib.parse.quote(filename)
-    url = f"https://github.com/cienai/IntegrationHub/raw/{tag}/powerbi/"
-    url = url + encoded_file
-    print("--- Downloading from: ", url)
-    r = requests.get(url, allow_redirects=True)
-    open(local_file_name, 'wb').write(r.content)
+    encoded_path = urllib.parse.quote(f"powerbi/{filename}", safe="/")
+    url = f"https://api.github.com/repos/cienai/IntegrationHub/contents/{encoded_path}"
+    headers = {
+        "Authorization": f"Bearer {github_token}",
+        "Accept": "application/vnd.github.raw+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    partial_file_name = f"{local_file_name}.part"
+
+    print(f"--- downloading IntegrationHub asset: {filename} at ref {tag}")
+    try:
+        with requests.get(
+            url,
+            headers=headers,
+            params={"ref": tag},
+            stream=True,
+            timeout=(10, 300),
+        ) as response:
+            response.raise_for_status()
+            with open(partial_file_name, "wb") as output_file:
+                for chunk in response.iter_content(chunk_size=1024 * 1024):
+                    if chunk:
+                        output_file.write(chunk)
+
+        os.replace(partial_file_name, local_file_name)
+    except Exception:
+        if os.path.exists(partial_file_name):
+            os.remove(partial_file_name)
+        raise
 
 
 def get_capcities(client):
