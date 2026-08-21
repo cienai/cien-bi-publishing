@@ -5,6 +5,7 @@ import msal
 import urllib.parse
 import zipfile
 import os
+import hashlib
 
 POWERBI_BASE_URL = "https://api.powerbi.com/v1.0/myorg"
 
@@ -542,26 +543,118 @@ def _get_config(pbi_workspace_conn, scope_overrides=None):
     return config
 
 
-def download_file_from_integration_hub(tag, filename, local_file_name, *, github_token):
-    """Download a Power BI asset from the private IntegrationHub repository."""
+INTEGRATION_HUB_REPOSITORY = "cienai/IntegrationHub"
+GITHUB_API_VERSION = "2022-11-28"
+GIT_LFS_MEDIA_TYPE = "application/vnd.git-lfs+json"
+
+
+def _integration_hub_headers(github_token, *, accept="application/vnd.github+json"):
     if not github_token or not github_token.strip():
         raise ValueError("github_token is required to download IntegrationHub assets")
+    return {
+        "Authorization": f"Bearer {github_token.strip()}",
+        "Accept": accept,
+        "X-GitHub-Api-Version": GITHUB_API_VERSION,
+    }
+
+
+def get_integration_hub_commit(ref, *, github_token):
+    """Resolve an IntegrationHub branch, tag, or SHA to an immutable commit SHA."""
+    url = f"https://api.github.com/repos/{INTEGRATION_HUB_REPOSITORY}/commits"
+    response = requests.get(
+        url,
+        headers=_integration_hub_headers(github_token),
+        params={"sha": ref, "per_page": 1},
+        timeout=(10, 60),
+    )
+    response.raise_for_status()
+    commits = response.json()
+    if not isinstance(commits, list) or not commits or not commits[0].get("sha"):
+        raise RuntimeError(f"No IntegrationHub commit found for ref {ref}")
+    return commits[0]["sha"]
+
+
+def _parse_git_lfs_pointer(content, filename):
+    try:
+        lines = content.decode("utf-8").splitlines()
+    except UnicodeDecodeError as exc:
+        raise RuntimeError(f"IntegrationHub asset {filename} is not a Git LFS pointer") from exc
+
+    values = {}
+    for line in lines:
+        key, separator, value = line.partition(" ")
+        if separator:
+            values[key] = value
+
+    oid = values.get("oid", "")
+    if values.get("version") != "https://git-lfs.github.com/spec/v1" or not oid.startswith("sha256:"):
+        raise RuntimeError(f"IntegrationHub asset {filename} is not a valid Git LFS pointer")
+    try:
+        size = int(values["size"])
+    except (KeyError, ValueError) as exc:
+        raise RuntimeError(f"IntegrationHub asset {filename} has an invalid Git LFS size") from exc
+    return oid.removeprefix("sha256:"), size
+
+
+def _get_git_lfs_download_action(oid, size, *, github_token):
+    url = f"https://github.com/{INTEGRATION_HUB_REPOSITORY}.git/info/lfs/objects/batch"
+    headers = _integration_hub_headers(github_token, accept=GIT_LFS_MEDIA_TYPE)
+    headers["Content-Type"] = GIT_LFS_MEDIA_TYPE
+    response = requests.post(
+        url,
+        headers=headers,
+        json={
+            "operation": "download",
+            "transfers": ["basic"],
+            "objects": [{"oid": oid, "size": size}],
+        },
+        timeout=(10, 60),
+    )
+    response.raise_for_status()
+    objects = response.json().get("objects", [])
+    if not objects:
+        raise RuntimeError(f"Git LFS did not return object {oid}")
+    lfs_object = objects[0]
+    if lfs_object.get("error"):
+        raise RuntimeError(f"Git LFS could not download object {oid}: {lfs_object['error']}")
+    download_action = lfs_object.get("actions", {}).get("download")
+    if not download_action or not download_action.get("href"):
+        raise RuntimeError(f"Git LFS did not provide a download URL for object {oid}")
+    return download_action
+
+
+def download_file_from_integration_hub(tag, filename, local_file_name, *, github_token):
+    """Download and verify a Git LFS-backed Power BI asset."""
+    headers = _integration_hub_headers(
+        github_token,
+        accept="application/vnd.github.raw+json",
+    )
 
     encoded_path = urllib.parse.quote(f"powerbi/{filename}", safe="/")
-    url = f"https://api.github.com/repos/cienai/IntegrationHub/contents/{encoded_path}"
-    headers = {
-        "Authorization": f"Bearer {github_token}",
-        "Accept": "application/vnd.github.raw+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-    }
+    pointer_url = f"https://api.github.com/repos/{INTEGRATION_HUB_REPOSITORY}/contents/{encoded_path}"
     partial_file_name = f"{local_file_name}.part"
 
     print(f"--- downloading IntegrationHub asset: {filename} at ref {tag}")
     try:
-        with requests.get(
-            url,
+        pointer_response = requests.get(
+            pointer_url,
             headers=headers,
             params={"ref": tag},
+            timeout=(10, 60),
+        )
+        pointer_response.raise_for_status()
+        oid, expected_size = _parse_git_lfs_pointer(pointer_response.content, filename)
+        download_action = _get_git_lfs_download_action(
+            oid,
+            expected_size,
+            github_token=github_token,
+        )
+
+        downloaded_size = 0
+        digest = hashlib.sha256()
+        with requests.get(
+            download_action["href"],
+            headers=download_action.get("header", {}),
             stream=True,
             timeout=(10, 300),
         ) as response:
@@ -570,6 +663,16 @@ def download_file_from_integration_hub(tag, filename, local_file_name, *, github
                 for chunk in response.iter_content(chunk_size=1024 * 1024):
                     if chunk:
                         output_file.write(chunk)
+                        downloaded_size += len(chunk)
+                        digest.update(chunk)
+
+        if downloaded_size != expected_size:
+            raise RuntimeError(
+                f"IntegrationHub asset {filename} size mismatch: "
+                f"expected {expected_size}, downloaded {downloaded_size}"
+            )
+        if digest.hexdigest() != oid:
+            raise RuntimeError(f"IntegrationHub asset {filename} checksum mismatch")
 
         os.replace(partial_file_name, local_file_name)
     except Exception:
