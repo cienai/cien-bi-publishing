@@ -1,3 +1,4 @@
+import base64
 import time
 import requests
 import json
@@ -8,6 +9,7 @@ import os
 import hashlib
 
 POWERBI_BASE_URL = "https://api.powerbi.com/v1.0/myorg"
+FABRIC_BASE_URL = "https://api.fabric.microsoft.com/v1"
 
 
 def get_auth_token(config):
@@ -515,12 +517,18 @@ def add_usergroup_to_group(client, usergroup_id, usergroup_type, target_group_id
 
 def get_client(pbi_workspace_conn, scope_overrides=None):
     """
-    returns a client object that can be used to interact with the PowerBI service
+    returns a client object that can be used to interact with the PowerBI service.
+    Also acquires a token for the Fabric REST API (same app registration, different
+    resource scope) so the client can be used with the create_fabric_item_from_definition
+    / update_fabric_item_definition helpers below.
     """
     config = _get_config(pbi_workspace_conn, scope_overrides)
     token = get_auth_token(config)
+    fabric_config = _get_config(pbi_workspace_conn, ["https://api.fabric.microsoft.com/.default"])
+    fabric_token = get_auth_token(fabric_config)
     client = {
         'auth_token': token,
+        'fabric_auth_token': fabric_token,
     }
     return client
 
@@ -679,6 +687,201 @@ def download_file_from_integration_hub(tag, filename, local_file_name, *, github
         if os.path.exists(partial_file_name):
             os.remove(partial_file_name)
         raise
+
+
+def checkout_integration_hub(tag, *, github_token):
+    """
+    Downloads the whole IntegrationHub repo at `tag` as a single tarball and extracts it
+    to a local temp directory. One HTTP request regardless of repo size, versus the
+    hundreds-to-thousands of individual Git Blobs API calls it'd take to fetch a PBIP
+    project's files one at a time (which is both slow and burns through the GitHub REST
+    API's hourly rate limit fast across a multi-tenant publish run). Also sidesteps the
+    Git Trees API's truncation limit on very large repos.
+
+    Returns the local path to the extracted repo root. Caller is responsible for cleaning
+    it up (e.g. via `shutil.rmtree`) once done; reuse a single checkout across every
+    dataset/report in a publish run rather than checking out per-item.
+    """
+    import shutil
+    import tarfile
+    import tempfile
+
+    commit_sha = get_integration_hub_commit(tag, github_token=github_token)
+    url = f"https://api.github.com/repos/{INTEGRATION_HUB_REPOSITORY}/tarball/{commit_sha}"
+    headers = _integration_hub_headers(github_token)
+
+    tmp_dir = tempfile.mkdtemp(prefix="integrationhub_")
+    try:
+        with requests.get(url, headers=headers, stream=True, timeout=(10, 300)) as response:
+            response.raise_for_status()
+            with tarfile.open(fileobj=response.raw, mode="r|gz") as tar:
+                tar.extractall(tmp_dir, filter="data")
+    except Exception:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise
+
+    # GitHub tarballs have a single top-level "<owner>-<repo>-<short-sha>/" directory.
+    entries = os.listdir(tmp_dir)
+    if len(entries) != 1:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise RuntimeError(f"Unexpected IntegrationHub archive layout under {tmp_dir}: {entries}")
+    return os.path.join(tmp_dir, entries[0])
+
+
+def read_pbip_project_files(integration_hub_root, project_path):
+    """
+    Reads every file under `project_path` (e.g. "powerbi/src/<name>.SemanticModel" or
+    "powerbi/src/<name>.Report") from a local IntegrationHub checkout produced by
+    checkout_integration_hub.
+
+    Returns {path relative to project_path: raw file bytes}.
+    """
+    project_dir = os.path.join(integration_hub_root, project_path)
+    if not os.path.isdir(project_dir):
+        raise RuntimeError(f"IntegrationHub path '{project_path}' not found under {integration_hub_root}")
+
+    files = {}
+    for dirpath, _dirnames, filenames in os.walk(project_dir):
+        for filename in filenames:
+            full_path = os.path.join(dirpath, filename)
+            relative_path = os.path.relpath(full_path, project_dir).replace(os.sep, "/")
+            with open(full_path, "rb") as f:
+                files[relative_path] = f.read()
+    if not files:
+        raise RuntimeError(f"No files found under IntegrationHub path '{project_path}'")
+    return files
+
+
+def build_semantic_model_definition_parts(files):
+    """
+    files: {relative path: raw bytes}, as returned by download_pbip_project_from_integration_hub
+    for a *.SemanticModel project.
+
+    Returns a Fabric definition.parts[] list containing just the files Fabric's semantic
+    model item definition actually understands (definition.pbism, .platform, and everything
+    under definition/) -- excluding Desktop-only convenience files like .pbi/, DAXQueries/,
+    TMDLScripts/, diagramLayout.json.
+    """
+    parts = [
+        {
+            "path": path,
+            "payload": base64.b64encode(data).decode("ascii"),
+            "payloadType": "InlineBase64",
+        }
+        for path, data in files.items()
+        if path in ("definition.pbism", ".platform") or path.startswith("definition/")
+    ]
+    if not parts:
+        raise RuntimeError("No semantic model definition parts found (missing definition.pbism/definition/*)")
+    return parts
+
+
+def build_report_definition_parts(files, *, dataset_id):
+    """
+    files: {relative path: raw bytes}, as returned by download_pbip_project_from_integration_hub
+    for a *.Report project.
+
+    Returns a Fabric definition.parts[] list containing .platform, everything under
+    definition/, StaticResources/ and CustomVisuals/ (reports that embed a custom visual
+    reference their .pbiviz assets from there -- Fabric rejects the report at import time
+    if they're missing), and a definition.pbir rewritten to bind the report to `dataset_id`
+    -- so the created report is already bound to its dataset, no separate Rebind call
+    needed. Desktop-editor-only files (DAXQueries/, semanticModelDiagramLayout.json, .pbi/)
+    are intentionally excluded; they aren't part of Fabric's report definition schema.
+    """
+    included_prefixes = ("definition/", "StaticResources/", "CustomVisuals/")
+    parts = [
+        {
+            "path": path,
+            "payload": base64.b64encode(data).decode("ascii"),
+            "payloadType": "InlineBase64",
+        }
+        for path, data in files.items()
+        if path != "definition.pbir"
+        and (path == ".platform" or path.startswith(included_prefixes))
+    ]
+    if not parts:
+        raise RuntimeError("No report definition parts found (missing definition/* or StaticResources/*)")
+
+    pbir = {
+        "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definitionProperties/2.0.0/schema.json",
+        "version": "4.0",
+        "datasetReference": {
+            "byConnection": {
+                "connectionString": (
+                    "Data Source=powerbi://api.powerbi.com/v1.0/myorg/placeholder;"
+                    'initial catalog="placeholder";access mode=readonly;'
+                    f"integrated security=ClaimsToken;semanticmodelid={dataset_id}"
+                )
+            }
+        },
+    }
+    pbir_bytes = json.dumps(pbir).encode("utf-8")
+    parts.append({
+        "path": "definition.pbir",
+        "payload": base64.b64encode(pbir_bytes).decode("ascii"),
+        "payloadType": "InlineBase64",
+    })
+    return parts
+
+
+def _get_fabric_headers(client):
+    return {
+        "Authorization": f"Bearer {client['fabric_auth_token']}",
+        "Content-Type": "application/json",
+    }
+
+
+def _poll_fabric_lro(headers, response, *, interval=20, max_polls=30):
+    """Polls a Fabric long-running-operation response (202) until it succeeds or fails."""
+    if response.status_code == 201:
+        return response.json()
+    if response.status_code != 202:
+        raise Exception(f"Fabric API call failed: {response.status_code} {response.content}")
+
+    op_url = response.headers["Location"]
+    retry_after = int(response.headers.get("Retry-After", interval))
+    for _ in range(max_polls):
+        time.sleep(retry_after)
+        poll_response = requests.get(op_url, headers=headers)
+        poll_response.raise_for_status()
+        status = poll_response.json().get("status")
+        print(f"--- fabric operation status: {status} ---")
+        if status == "Succeeded":
+            result_response = requests.get(op_url.rstrip("/") + "/result", headers=headers)
+            if result_response.status_code == 200 and result_response.text:
+                return result_response.json()
+            return {}
+        if status == "Failed":
+            raise Exception(f"Fabric operation failed: {poll_response.content}")
+    raise TimeoutError(f"Timed out waiting for Fabric operation: {op_url}")
+
+
+def create_fabric_item_from_definition(client, group_id, item_type, display_name, parts, description=None):
+    """
+    Creates a Fabric item (item_type: "semanticModels" or "reports") directly from a
+    definition.parts[] payload (as built by build_semantic_model_definition_parts /
+    build_report_definition_parts), skipping the classic pbix Import API entirely.
+    """
+    url = f"{FABRIC_BASE_URL}/workspaces/{group_id}/{item_type}"
+    body = {"displayName": display_name, "definition": {"parts": parts}}
+    if description:
+        body["description"] = description
+    headers = _get_fabric_headers(client)
+    response = requests.post(url, headers=headers, data=json.dumps(body))
+    return _poll_fabric_lro(headers, response)
+
+
+def update_fabric_item_definition(client, group_id, item_type, item_id, parts):
+    """
+    Updates an existing Fabric item's definition in place (item_type: "semanticModels" or
+    "reports").
+    """
+    url = f"{FABRIC_BASE_URL}/workspaces/{group_id}/{item_type}/{item_id}/updateDefinition"
+    body = {"definition": {"parts": parts}}
+    headers = _get_fabric_headers(client)
+    response = requests.post(url, headers=headers, data=json.dumps(body))
+    return _poll_fabric_lro(headers, response)
 
 
 def get_capcities(client):
