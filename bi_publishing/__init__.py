@@ -271,21 +271,31 @@ def update_report_content_in_group(client, group_id, src_report_id, target_repor
 
 def refresh_dataset_in_group(client, group_id, datasetId):
     """
-    refresh the dataset in the given group
+    Refresh the dataset in the given group with serialized model processing.
+
+    Enhanced refresh requests return HTTP 202 with an empty response body. The
+    Location header identifies the accepted refresh and can be used to poll its
+    execution details.
     """
     api_url = f"{POWERBI_BASE_URL}/groups/{group_id}/datasets/{datasetId}/refreshes"
     payload = {
-        # "notifyOption": "MailOnFailure",
-        # "retryCount": 3
+        "type": "Full",
+        "commitMode": "transactional",
+        "maxParallelism": 1,
+        "retryCount": 0,
     }
-    payload_json = json.dumps(payload)
-    response = requests.post(api_url, headers=_get_headers(client), data=payload_json)
+    response = requests.post(api_url, headers=_get_headers(client), json=payload)
     if response.status_code == 202:
-        print("--- Dataset refresh request accepted. ---")
+        refresh_location = response.headers.get("Location")
+        print("--- Dataset enhanced refresh request accepted. ---")
+        if refresh_location:
+            print(f"--- Refresh status URL: {refresh_location} ---")
+        return refresh_location
     else:
         print("Failed to refresh dataset. Status code:", response.status_code)
         print("Response:", response.text)
-        raise Exception(response.text)
+        error_message = response.text or response.reason or "Power BI refresh request failed"
+        raise Exception(error_message)
 
 
 def delete_dataset_in_group(client, group_id, dataset_id):
