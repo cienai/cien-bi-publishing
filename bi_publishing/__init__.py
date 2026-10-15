@@ -275,11 +275,12 @@ def refresh_dataset_in_group(client, group_id, datasetId):
     """
     api_url = f"{POWERBI_BASE_URL}/groups/{group_id}/datasets/{datasetId}/refreshes"
     payload = {
-        # "notifyOption": "MailOnFailure",
-        # "retryCount": 3
+        "type": "automatic",
+        "commitMode": "transactional",
+        "maxParallelism": 1,
+        "retryCount": 0,
     }
-    payload_json = json.dumps(payload)
-    response = requests.post(api_url, headers=_get_headers(client), data=payload_json)
+    response = requests.post(api_url, headers=_get_headers(client), json=payload)
     if response.status_code == 202:
         print("--- Dataset refresh request accepted. ---")
     else:
